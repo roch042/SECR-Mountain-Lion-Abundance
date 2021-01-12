@@ -1,5 +1,6 @@
 require(tidyverse)
 require(sp)
+require(sf)
 require(adehabitatHR)
 require(ggtext)
 
@@ -43,7 +44,7 @@ win_dat <- DAT %>%
   dplyr::filter(!is.na(`Animal ID`))
 
 sum_dat <- DAT %>%
-  dplyr::filter(lubridate::date(`Location Date (GMT)`) >= "2020-05-01" & lubridate::date(`Location Date (GMT)`) <= "2020-12-01") %>%
+  dplyr::filter(lubridate::date(`Location Date (GMT)`) >= "2020-05-01" & lubridate::date(`Location Date (GMT)`) <= "2020-11-30") %>%
   dplyr::filter(!is.na(`Animal ID`))
 
 # a few summer homeranges are weird so censor them
@@ -107,12 +108,13 @@ mapfun <- function(
   win_kernel=sf_win_pel.kernel.poly,
   sum_dat_map=sum_dat_sf_idaho,
   sum_kernel=sf_sum_pel.kernel.poly,
-  all_gmu = sf_ID_gmu_idaho)
+  all_gmu = sf_ID_gmu_idaho,
+  caption_info = "Winter (12/01/2019 to 03/31/2020) in blue. \n Summer (05/01/2020 to 11/30/2020) in orange.")
 {
   
-  spec_sex <- tolower(unique(mtlion_index$Sex[mtlion_index$`Animal ID`==spec_animal]))
-  spec_age <- tolower(unique(mtlion_index$`Age Class (Capture)`[mtlion_index$`Animal ID`==spec_animal]))
-  spec_capture <- lubridate::date(unique(mtlion_index$`Capture Date`[mtlion_index$`Animal ID`==spec_animal]))
+  spec_sex <- na.omit(tolower(unique(mtlion_index$Sex[mtlion_index$`Animal ID`==spec_animal])))
+  spec_age <- na.omit(tolower(unique(mtlion_index$`Age Class (Capture)`[mtlion_index$`Animal ID`==spec_animal])))
+  spec_capture <- na.omit(lubridate::date(unique(mtlion_index$`Capture Date`[mtlion_index$`Animal ID`==spec_animal])))
   
   win_kernel<-win_kernel[win_kernel$id==spec_animal,]
   sum_kernel<-sum_kernel[sum_kernel$id==spec_animal,]
@@ -164,7 +166,7 @@ mapfun <- function(
     ylab("") +
     labs(title = paste0(spec_age," ",spec_sex," ",spec_animal," captured on ",spec_capture),
             subtitle = paste0("winter = ",round(win_kernel$area, digits=0)," km2, summer = ",round(sum_kernel$area, digits=0)," km2"),
-            caption = "Winter (12/01/2019 to 03/31/2020) in blue. \n Summer (05/01/2020 to 12/01/2020) in orange.") #+
+            caption = caption_info) #+
     # coord_sf(xlim = c(xmin, xmax), ylim = c(ymin, ymax))
   
   print(m)
@@ -263,3 +265,7 @@ for (i in 1:length(gmus)){
   )
 }
 dev.off()
+
+to_save <- c("mtlion_index","sf_sum_pel.kernel.poly","sf_win_pel.kernel.poly","win_dat_sf_idaho","sum_dat_sf_idaho","sf_geo_state_idaho","sf_ID_gmu_idaho")
+
+save(list=to_save, file="mountain_lion_kde.RData")
