@@ -1,0 +1,29 @@
+### Spatial Capture Recapture
+
+model {
+  
+  psi ~ dbeta(1,1)
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+
+    #genetic scr
+    for(j in 1:J.d){
+      d2.d[i,j] <- (s[i,1]-X.d[j,1])^2 + (s[i,2]-X.d[j,2])^2
+      logit(p0.d[i,j])<- alpha0 + alpha1*surveyDist[j] ### surveyDist is the distance scat detection dogs surveyed in each gridcell
+      p.d[i,j] <- p0.d[i,j]*exp(-d2.d[i,j]/(2*sigma2))*z[i]*trapOp.d[j] ### trapOp.d is binary vector telling whether dogs surveyed each gridcell (1) or not (0)
+      y.d[i,j]~dbin(p.d[i,j],1) # Binomial observation model
+    }
+  }
+
+  N <- sum(z)
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 ### area of state-space in 100 km2
+  D <- N/A
+  
+}

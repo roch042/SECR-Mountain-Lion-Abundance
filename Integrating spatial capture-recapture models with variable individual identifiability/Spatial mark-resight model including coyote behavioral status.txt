@@ -1,0 +1,57 @@
+### SMR modeling behavioral status (resident vs transient) on sigma and baseline detection rate for coyotes, augmented with GPS data
+
+model {
+  
+  psi ~ dbeta(1,1)
+  psi.trans ~ dbeta(2.4,7.2) ### trans is a binary vector in which 0 indicates the coyote is a resident and 1 indicates it is a transient. It is observed only for GPS collared individuals and every other individual is given NA
+  sigma[1] ~ dunif(0,20000)
+  sigma2[1] <- sigma[1]^2
+  sigma[2] ~ dunif(0,20000)
+  sigma2[2] <- sigma[2]^2
+  lam0.r[1] ~ dunif(0,5)
+  lam0.r[2] ~ dunif(0,5)
+
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    trans[i] ~ dbern(psi.trans) ### informative prior based on 11 previous studies. Specifies the mean probability of being a transient is 0.25 with 0.13 standard deviation
+    trans2[i] <- trans[i]+1
+
+    #resighting process
+    for(j in 1:J.r) {
+      d2.r[i,j] <- (s[i,1]-X.r[j,1])^2 + (s[i,2]-X.r[j,2])^2
+      lam.r[i,j] <- lam0.r[trans2[i]]*exp(-d2.r[i,j]/(2*sigma2[trans2[i]]))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.r) {
+      for(k in 1:K.r){
+        y.r[i,j,k] ~ dpois(lam.r[i,j]*marked.status[i,k]*trapOp.r[j,k])
+      }
+    }
+  }
+
+  #unmarked animals
+  for(j in 1:J.r) {
+    for(k in 1:K.r){
+      Lam[j,k] <- inprod(lam.r[,j],(1-marked.status[,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.r[j,k])
+    }
+  }
+
+  ## Model for the telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+    telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2[trans2[i]]) 
+    telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2[trans2[i]]) 
+    }
+  }
+
+  N <- sum(z)
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A
+  
+}

@@ -1,0 +1,59 @@
+### Generalized Spatial Mark Resight augmented with GPS data
+
+model {
+  
+  psi ~ dbeta(1,1)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  lam0.r ~ dunif(0,5)
+  lam0.m ~ dunif(0,5)
+
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+
+    #marking process
+    for(j in 1:J.m){
+      d2.m[i,j] <- (s[i,1]-X.m[j,1])^2 + (s[i,2]-X.m[j,2])^2
+      lam.m[i,j] <- lam0.m*exp(-d2.m[i,j]/(2*sigma2))*z[i]
+      y.m[i,j] ~ dpois(lam.m[i,j])
+    }
+
+    #resighting process
+    for(j in 1:J.r) {
+      d2.r[i,j] <- (s[i,1]-X.r[j,1])^2 + (s[i,2]-X.r[j,2])^2
+      lam.r[i,j] <- lam0.r*exp(-d2.r[i,j]/(2*sigma2))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.r) {
+      for(k in 1:K.r){
+        y.r[i,j,k] ~ dpois(lam.r[i,j]*marked.status[i,k]*trapOp.r[j,k]) 
+      }
+    }
+  }
+
+  #unmarked animals
+  for(j in 1:J.r) {
+    for(k in 1:K.r){
+      Lam[j,k] <- inprod(lam.r[,j],(1-marked.status[,k])) ### marked status tells whether each collared animal was marked during each occasion
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.r[j,k]) ### trapOp is vector of proportion of time each camera was operational within each occasion
+    }
+  }
+
+  ## Model for the telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2)
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2)
+    }
+  }
+
+  N <- sum(z)
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 ### area of state-space in 100 km2
+  D <- N/A
+  
+}

@@ -1,0 +1,44 @@
+### SCR modeling behavioral status (resident vs transient) on sigma and baseline detection rate for coyotes, augmented with GPS data
+
+model {
+  
+  psi ~ dbeta(1,1)
+  psi.status ~ dbeta(2.4,7.2) ### informative prior based on 11 previous studies. Specifies the mean probability of being a transient is 0.25 with 0.13 standard deviation
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  alpha2 ~ dnorm(0,0.01)
+
+  for(s in 1:2){
+    sigma[s] ~ dunif(0,20000)
+    sigma2[s]<-sigma[s]*sigma[s]
+  }
+
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    trans[i] ~ dbern(psi.status) ### trans is a binary vector in which 0 indicates the coyote is a resident and 1 indicates it is a transient. It is observed only for GPS collared individuals and every other individual is given NA
+    trans2[i] <- trans[i]+1
+
+    #genetic scr
+    for(j in 1:J.d){
+      d2.d[i,j] <- (s[i,1]-X.d[j,1])^2 + (s[i,2]-X.d[j,2])^2
+      logit(p0.d[i,j])<- alpha0 + alpha1*surveyDist[j] + alpha2*trans[i]
+      p.d[i,j] <- p0.d[i,j]*exp(-d2.d[i,j]/(2*sigma2[trans2[i]]))*z[i]*trapOp.d[j]
+      y.d[i,j]~dbin(p.d[i,j],1) # Binomial observation model
+    }
+  }
+    
+  ## Model for the telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+    telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2[trans2[i]])
+    telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2[trans2[i]])
+    }
+  }
+
+  N <- sum(z)
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 ### area of state-space in 100 km2
+  D <- N/A
+  
+}

@@ -1,0 +1,461 @@
+### "Evaluating and integrating spatial capture-recapture models with data of variable individual Identifiability", 
+### Ruprecht, et al., Ecological Applications
+#
+### JAGS/NIMBLE code for:
+#
+# 1) Spatial Presence Absence (SPA), 
+# 2) Spatial Count (SC),
+# 3) conventional Spatial Mark-Resight (SMR),
+# 4) generalized Spatial Mark-Resight (gSMR),
+# 5) Spatial Capture Recapture (SCR),
+# 6) Hybrid gSMR+SCR,
+# 7) Hybrid gSMR+SCR with sex-specific detection and scale parameters, and
+# 8) Hybrid gSMR+SCR with behavioral state-specific (resident vs transient) detection and scale parameters for coyotes
+# 
+# As written, a model for telemetry data collected contemporaneously with detection sampling 
+#   is included to inform sigma and the activity centers of the marked individuals for models 3-8.
+# Models 1 and 2 assumed telemetry data was not collected contemporaneously with detection sampling
+#   so it only informs sigma
+
+
+### 1) Spatial Presence Absence (SPA)
+
+  p0 ~ dbeta(1,1)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  psi ~ dbeta(1,1)
+  
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    for(j in 1:J) {
+      d2[i,j] <- (s[i,1] - X.cam[j,1])^2 + (s[i,2] - X.cam[j,2])^2
+      prob[i,j] <- p0*exp(-d2[i,j]/(2*sigma2))*z[i]
+    }
+  }
+  
+  for(j in 1:J) {
+    P.trap[j]<- 1-prod(1-prob[1:M,j])
+    n.PA[j] ~ dbin(P.trap[j], K.trap[j])
+  }
+  
+  #telemetry data
+  for(i in 1:nMarked) {
+    s.other[i,1] ~ dunif(xlim[1], xlim[2]) # s.other is activity center for animal assumed to be from different study
+    s.other[i,2] ~ dunif(ylim[1], ylim[2]) 
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s.other[i,1], 1/sigma2) # here telemetry data assumed to have come from different study
+      telemetry.array[i,l,2] ~ dnorm(s.other[i,2], 1/sigma2) 
+    }
+  }
+  
+  N <- sum(z[1:M]) 
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # population density per 100 km2
+  
+  
+  
+### 2) Spatial Count (SC)
+  
+  lam0 ~ dunif(0,5)
+  sigma ~ dunif(0,20000)
+  sigma2<-sigma^2
+  psi ~ dbeta(1,1)
+    
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+      
+    for(j in 1:J) {
+      d2[i,j] <- (s[i,1] - X.cam[j,1])^2 + (s[i,2] - X.cam[j,2])^2
+      lam[i,j] <- lam0*exp(-d2[i,j]/(2*sigma2))*z[i]
+    }
+  }
+    
+  #telemetry data
+  for(i in 1:nMarked) {
+    s.other[i,1] ~ dunif(xlim[1], xlim[2]) # s.other is activity center for animal assumed to be from different study
+    s.other[i,2] ~ dunif(ylim[1], ylim[2])
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s.other[i,1], 1/sigma2) # here telemetry data assumed to have come from different study
+      telemetry.array[i,l,2] ~ dnorm(s.other[i,2], 1/sigma2) 
+    }
+  }
+    
+  for(j in 1:J) {
+    Lambda[j] <- sum(lam[1:M,j]) * trapOp.cam[j]
+    n.SC[j] ~ dpois(Lambda[j])
+  }
+    
+  N <- sum(z[1:M]) # population size
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # population density per 100 km2
+    
+
+  
+### 3) conventional Spatial Mark-Resight (SMR)
+
+  psi ~ dbeta(1,1)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  lam0.resight ~ dunif(0,5)
+  lam0.marking ~ dunif(0,5)
+  
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    #resighting process
+    for(j in 1:J.resight) {
+      d2.resight[i,j] <- (s[i,1]-X.cam[j,1])^2 + (s[i,2]-X.cam[j,2])^2
+      lam.resight[i,j] <- lam0.resight*exp(-d2.resight[i,j]/(2*sigma2))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.resight) {
+      for(k in 1:K.resight){
+        y.resight[i,j,k] ~ dpois(lam.resight[i,j]*marked.status[i,k]*trapOp.cam[j,k])
+      }
+    }
+  }
+  
+  #unmarked animals
+  for(j in 1:J.resight) {
+    for(k in 1:K.resight){
+      Lam[j,k] <- inprod(lam.resight[1:M,j],(1-marked.status[1:M,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.cam[j,k])
+    }
+  }
+  
+  #telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2)
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2)
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # density per 100 km^2 
+  
+
+  
+### 4) generalized Spatial Mark-Resight (gSMR)  
+  
+  psi ~ dbeta(1,1)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  lam0.resight ~ dunif(0,5)
+  lam0.marking ~ dunif(0,5)
+  
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    #marking process
+    for(j in 1:J.marking){
+      d2.marking[i,j] <- (s[i,1]-X.marking[j,1])^2 + (s[i,2]-X.marking[j,2])^2
+      lam.marking[i,j] <- lam0.marking*exp(-d2.marking[i,j]/(2*sigma2))*z[i]
+      y.marking[i,j] ~ dpois(lam.marking[i,j])
+    }
+    
+    #resighting process
+    for(j in 1:J.resight) {
+      d2.resight[i,j] <- (s[i,1]-X.cam[j,1])^2 + (s[i,2]-X.cam[j,2])^2
+      lam.resight[i,j] <- lam0.resight*exp(-d2.resight[i,j]/(2*sigma2))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.resight) {
+      for(k in 1:K.resight){
+        y.resight[i,j,k] ~ dpois(lam.resight[i,j]*marked.status[i,k]*trapOp.cam[j,k])
+      }
+    }
+  }
+  
+  #unmarked animals
+  for(j in 1:J.resight) {
+    for(k in 1:K.resight){
+      Lam[j,k] <- inprod(lam.resight[1:M,j],(1-marked.status[1:M,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.cam[j,k])
+    }
+  }
+  
+  #telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2)
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2)
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # density per 100 km^2
+  
+  
+  
+### 5) Spatial Capture Recapture (SCR)
+  
+  psi ~ dbeta(1,1)
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    # genetic scr
+    for(j in 1:J.genetics){
+      d2.genetics[i,j] <- (s[i,1]-X.genetics[j,1])^2 + (s[i,2]-X.genetics[j,2])^2
+      logit(p0.genetics[i,j])<- alpha0 + alpha1*surveyDist[j]
+      p.genetics[i,j] <- p0.genetics[i,j]*exp(-d2.genetics[i,j]/(2*sigma2))*z[i]*trapOp.genetics[j]
+      y.genetics[i,j]~dbin(p.genetics[i,j],1) 
+    }
+  }
+  
+  # telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2) 
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2) 
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # density per 100 km^2
+  
+  
+  
+### 6) Hybrid gSMR+SCR  
+  
+  psi ~ dbeta(1,1)
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  sigma ~ dunif(0,20000)
+  sigma2 <- sigma^2
+  lam0.resight ~ dunif(0,5)
+  lam0.marking ~ dunif(0,5)
+  
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    #genetic scr
+    for(j in 1:J.genetics){
+      d2.genetics[i,j] <- (s[i,1]-X.genetics[j,1])^2 + (s[i,2]-X.genetics[j,2])^2
+      logit(p0.genetics[i,j])<- alpha0 + alpha1*surveyDist[j]
+      p.genetics[i,j] <- p0.genetics[i,j]*exp(-d2.genetics[i,j]/(2*sigma2))*z[i]*trapOp.genetics[j]
+      y.genetics[i,j]~dbin(p.genetics[i,j],1) 
+    } 
+    
+    #marking process
+    for(j in 1:J.marking){
+      d2.marking[i,j] <- (s[i,1]-X.marking[j,1])^2 + (s[i,2]-X.marking[j,2])^2
+      lam.marking[i,j] <- lam0.marking*exp(-d2.marking[i,j]/(2*sigma2))*z[i]
+      y.marking[i,j] ~ dpois(lam.marking[i,j])
+    }
+    
+    #resighting process
+    for(j in 1:J.resight) {
+      d2.resight[i,j] <- (s[i,1]-X.cam[j,1])^2 + (s[i,2]-X.cam[j,2])^2
+      lam.resight[i,j] <- lam0.resight*exp(-d2.resight[i,j]/(2*sigma2))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.resight) {
+      for(k in 1:K.resight){
+        y.resight[i,j,k] ~ dpois(lam.resight[i,j]*marked.status[i,k]*trapOp.cam[j,k])
+      }
+    }
+  }
+  
+  #unmarked animals
+  for(j in 1:J.resight) {
+    for(k in 1:K.resight){
+      Lam[j,k] <- inprod(lam.resight[1:M,j],(1-marked.status[1:M,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.cam[j,k])
+    }
+  }
+  
+  ## telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2)
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2)
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km^2
+  D <- N/A # density per 100 km^2
+
+  
+  
+  ### 7) Hybrid gSMR+SCR with sex-specific detection and scale parameters
+  
+  psi ~ dbeta(1,1)
+  psi.sex ~ dbeta(1,1)
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  alpha2 ~ dnorm(0, 0.01)
+  
+  for(s in 1:2){
+    sigma[s] ~ dunif(0,20000)
+    sigma2[s] <- sigma[s]^2
+    lam0.resight[s] ~ dunif(0,5)
+  }
+  
+  lam0.marking ~ dunif(0,5)
+  
+  for(i in 1:M) {
+    sex[i] ~ dbern(psi.sex)
+    sex2[i] <- sex[i] + 1
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    #genetic scr
+    for(j in 1:J.genetics){
+      d2.genetics[i,j] <- (s[i,1]-X.genetics[j,1])^2 + (s[i,2]-X.genetics[j,2])^2
+      logit(p0.genetics[i,j])<- alpha0 + alpha1*surveyDist[j] + alpha2*sex[i]
+      p.genetics[i,j] <- p0.genetics[i,j]*exp(-d2.genetics[i,j]/(2*sigma2[sex2[i]]))*z[i]*trapOp.genetics[j]
+      y.genetics[i,j]~dbin(p.genetics[i,j],1) # Binomial observation model
+    } 
+    
+    #marking process
+    for(j in 1:J.marking){
+      d2.marking[i,j] <- (s[i,1]-X.marking[j,1])^2 + (s[i,2]-X.marking[j,2])^2
+      lam.marking[i,j] <- lam0.marking*exp(-d2.marking[i,j]/(2*sigma2[sex2[i]]))*z[i]
+      y.marking[i,j] ~ dpois(lam.marking[i,j])
+    }
+    
+    #resighting process
+    for(j in 1:J.resight) {
+      d2.resight[i,j] <- (s[i,1]-X.cam[j,1])^2 + (s[i,2]-X.cam[j,2])^2
+      lam.resight[i,j] <- lam0.resight[sex2[i]]*exp(-d2.resight[i,j]/(2*sigma2[sex2[i]]))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.resight) {
+      for(k in 1:K.resight){
+        y.resight[i,j,k] ~ dpois(lam.resight[i,j]*marked.status[i,k]*trapOp.cam[j,k])
+      }
+    }
+  }
+  
+  
+  #unmarked animals
+  for(j in 1:J.resight) {
+    for(k in 1:K.resight){
+      Lam[j,k] <- inprod(lam.resight[1:M,j],(1-marked.status[1:M,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.cam[j,k])
+    }
+  }
+  
+  ## Model for the telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2[sex2[i]])
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2[sex2[i]])
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # density per 100 km^2
+  
+  
+  
+### 8) Hybrid gSMR+SCR with behavioral state-specific (resident vs transient) detection and scale parameters for coyotes
+  
+  psi ~ dbeta(1,1)
+  psi.trans ~ dbeta(2.4,7.2) #informative prior specifying a .253 probability of being transient with 0.133 SD
+  alpha0 ~ dnorm(0, 0.01)
+  alpha1 ~ dnorm(0, 0.01)
+  alpha2 ~ dnorm(0, 0.01)
+  
+  for(s in 1:2){
+    sigma[s] ~ dunif(0,20000)
+    sigma2[s] <- sigma[s]^2
+    lam0.resight[s] ~ dunif(0,5)
+  }
+  
+  lam0.marking ~ dunif(0,5)
+  
+  for(i in 1:M) {
+    trans[i] ~ dbern(psi.trans)
+    trans2[i] <- trans[i] + 1
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+    
+    #genetic scr
+    for(j in 1:J.d){
+      d2.genetics[i,j] <- (s[i,1]-X.genetics[j,1])^2 + (s[i,2]-X.genetics[j,2])^2
+      logit(p0.genetics[i,j])<- alpha0 + alpha1*surveyDist[j] + alpha2*trans[i]
+      p.genetics[i,j] <- p0.genetics[i,j]*exp(-d2.genetics[i,j]/(2*sigma2[trans2[i]]))*z[i]*trapOp.genetics[j]
+      y.genetics[i,j]~dbin(p.genetics[i,j],1) # Binomial observation model
+    } 
+    
+    #marking process
+    for(j in 1:J.marking){
+      d2.marking[i,j] <- (s[i,1]-X.marking[j,1])^2 + (s[i,2]-X.marking[j,2])^2
+      lam.marking[i,j] <- lam0.marking*exp(-d2.marking[i,j]/(2*sigma2[trans2[i]]))*z[i]
+      y.marking[i,j] ~ dpois(lam.marking[i,j])
+    }
+    
+    #resighting process
+    for(j in 1:J.resight) {
+      d2.resight[i,j] <- (s[i,1]-X.cam[j,1])^2 + (s[i,2]-X.cam[j,2])^2
+      lam.resight[i,j] <- lam0.resight[trans2[i]]*exp(-d2.resight[i,j]/(2*sigma2[trans2[i]]))*z[i]
+    }
+  }
+  
+  #marked animals
+  for(i in 1:nMarked) {
+    for(j in 1:J.r) {
+      for(k in 1:K.r){
+        y.resight[i,j,k] ~ dpois(lam.resight[i,j]*trapOp.cam[j,k])
+      }
+    }
+  }
+  
+  #unmarked animals
+  for(j in 1:J.resight) {
+    for(k in 1:K.resight){
+      Lam[j,k] <- inprod(lam.resight[1:M,j],(1-marked.status[1:M,k]))
+      n[j,k] ~ dpois(Lam[j,k]*trapOp.r[j,k])
+    }
+  }
+  
+  #telemetry data
+  for(i in 1:nMarked) {
+    for(l in 1:nTelemLocs) {
+      telemetry.array[i,l,1] ~ dnorm(s[i,1], 1/sigma2[trans2[i]])
+      telemetry.array[i,l,2] ~ dnorm(s[i,2], 1/sigma2[trans2[i]])
+    }
+  }
+  
+  N <- sum(z[1:M])
+  A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 # area of state-space in 100 km2
+  D <- N/A # density per 100 km^2

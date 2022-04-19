@@ -1,0 +1,29 @@
+### Spatial Count model. Data summed over K occasions. 
+
+    
+model {
+
+  lambda0 ~ dunif(0, 5) 
+  sigma ~ dunif(0, 20000)
+  psi ~ dbeta(1, 1)
+    
+  for(i in 1:M) {
+    z[i] ~ dbern(psi)
+    s[i,1] ~ dunif(xlim[1], xlim[2])
+    s[i,2] ~ dunif(ylim[1], ylim[2])
+      for(j in 1:J) {
+        d[i,j] <- sqrt((s[i,1] - X[j,1])^2 + (s[i,2] - X[j,2])^2)
+        lambda[i,j] <- lambda0*exp(-d[i,j]^2/(2*sigma^2))*z[i]
+      }
+    }
+
+    for(j in 1:J) {
+      bigLambda[j] <- sum(lambda[1:M,j]) * trapOp[j] ### trapOp is vector of proportion of time each camera was operational within each occasion
+      n[j] ~ dpois(bigLambda[j]) 
+    }
+    
+    N <- sum(z)
+    A <- (xlim[2]-xlim[1])*(ylim[2]-ylim[1])/100000000 ### area of state-space in 100 km2
+    D <- N/A # population density per 100 km2
+    
+ }
